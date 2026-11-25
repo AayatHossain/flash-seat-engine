@@ -1,5 +1,6 @@
 package com.flashseat.inventory.hold;
 
+import com.flashseat.inventory.hold.HoldStateException.Problem;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -63,7 +64,29 @@ public class HoldService {
             // Throwing rolls back the whole transaction, hold row included: the buyer gets all seats or none.
             throw new SeatsUnavailableException(eventId, seatIds);
         }
-        return new Hold(holdId, eventId, userId, List.copyOf(seatIds), expiresAt.toInstant());
+        return new Hold(holdId, eventId, userId, "ACTIVE", List.copyOf(seatIds), expiresAt.toInstant());
+    }
+
+    public Optional<Hold> findHold(UUID eventId, UUID holdId) {
+        List<String> seatIds = jdbc.sql("""
+                        SELECT seat_id FROM seats WHERE event_id = :eventId AND hold_id = :holdId ORDER BY seat_id
+                        """)
+                .param("eventId", eventId)
+                .param("holdId", holdId)
+                .query(String.class)
+                .list();
+
+        return jdbc.sql("SELECT id, event_id, user_id, status, expires_at FROM holds WHERE event_id = :eventId AND id = :holdId")
+                .param("eventId", eventId)
+                .param("holdId", holdId)
+                .query((row, rowNum) -> new Hold(
+                        row.getObject("id", UUID.class),
+                        row.getObject("event_id", UUID.class),
+                        row.getString("user_id"),
+                        row.getString("status"),
+                        seatIds,
+                        row.getObject("expires_at", OffsetDateTime.class).toInstant()))
+                .optional();
     }
 
     @Transactional
@@ -78,12 +101,12 @@ public class HoldService {
 
         if (confirmed == 0) {
             String status = findStatus(eventId, holdId)
-                    .orElseThrow(() -> new HoldStateException(holdId, "does not exist"));
+                    .orElseThrow(() -> new HoldStateException(holdId, Problem.NOT_FOUND));
             if (status.equals("CONFIRMED")) {
                 return;
             }
             boolean ranOutOfTime = status.equals("ACTIVE") || status.equals("EXPIRED");
-            throw new HoldStateException(holdId, ranOutOfTime ? "has expired" : "is " + status);
+            throw new HoldStateException(holdId, ranOutOfTime ? Problem.EXPIRED : Problem.NOT_ACTIVE);
         }
 
         jdbc.sql("""
@@ -107,11 +130,11 @@ public class HoldService {
 
         if (released == 0) {
             String status = findStatus(eventId, holdId)
-                    .orElseThrow(() -> new HoldStateException(holdId, "does not exist"));
+                    .orElseThrow(() -> new HoldStateException(holdId, Problem.NOT_FOUND));
             if (status.equals("RELEASED") || status.equals("EXPIRED")) {
                 return;
             }
-            throw new HoldStateException(holdId, "is " + status + " and cannot be released");
+            throw new HoldStateException(holdId, Problem.CONFIRMED);
         }
 
         jdbc.sql("""

@@ -5,3 +5,6 @@ flashseat:
       # Tests call the sweeper directly, so the background schedule must not run and change data under them.
       enabled: false
       batch-size: 10
+  rate-limit:
+    capacity: 5
+    refill-per-second: 0.1

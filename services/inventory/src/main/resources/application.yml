@@ -20,6 +20,13 @@ flashseat:
       enabled: true
       interval: 5s
       batch-size: 500
+  admission:
+    # The default is for local development only. Real deployments pass ADMISSION_SECRET from a secret store.
+    secret: ${ADMISSION_SECRET:local-development-only-secret-0123456789}
+    validity: 10m
+  rate-limit:
+    capacity: 5
+    refill-per-second: 1.0
 
 management:
   endpoint:
