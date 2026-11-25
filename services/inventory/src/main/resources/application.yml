@@ -16,6 +16,10 @@ flashseat:
   hold:
     duration: 10m
     max-seats-per-hold: 8
+    sweeper:
+      enabled: true
+      interval: 5s
+      batch-size: 500
 
 management:
   endpoint:

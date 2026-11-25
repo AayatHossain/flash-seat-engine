@@ -82,7 +82,8 @@ public class HoldService {
             if (status.equals("CONFIRMED")) {
                 return;
             }
-            throw new HoldStateException(holdId, status.equals("ACTIVE") ? "has expired" : "is " + status);
+            boolean ranOutOfTime = status.equals("ACTIVE") || status.equals("EXPIRED");
+            throw new HoldStateException(holdId, ranOutOfTime ? "has expired" : "is " + status);
         }
 
         jdbc.sql("""

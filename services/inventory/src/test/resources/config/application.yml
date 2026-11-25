@@ -1,0 +1,7 @@
+# Test-only overrides. Spring Boot also loads src/main/resources/application.yml; this file wins where both set a value.
+flashseat:
+  hold:
+    sweeper:
+      # Tests call the sweeper directly, so the background schedule must not run and change data under them.
+      enabled: false
+      batch-size: 10
