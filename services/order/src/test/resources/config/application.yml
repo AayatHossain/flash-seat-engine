@@ -5,3 +5,9 @@ flashseat:
     cleanup:
       # Tests call the cleanup directly, so the background schedule must not run.
       enabled: false
+  outbox:
+    batch-size: 5
+    send-timeout: 5s
+    publisher:
+      # Tests call the publisher directly.
+      enabled: false

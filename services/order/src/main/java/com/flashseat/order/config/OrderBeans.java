@@ -6,10 +6,15 @@ import com.flashseat.order.idempotency.PostgresIdempotencyStore;
 import com.flashseat.order.inventory.InventoryClient;
 import com.flashseat.order.inventory.InventoryProperties;
 import com.flashseat.order.inventory.RestInventoryClient;
+import com.flashseat.order.outbox.OutboxProperties;
+import com.flashseat.order.outbox.OutboxPublisher;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.kafka.config.TopicBuilder;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.RestClient;
@@ -38,5 +43,19 @@ public class OrderBeans {
 
         RestClient rest = builder.baseUrl(properties.baseUrl()).requestFactory(requestFactory).build();
         return new RestInventoryClient(rest);
+    }
+
+    @Bean
+    NewTopic orderEventsTopic(OutboxProperties properties) {
+        return TopicBuilder.name(properties.topic())
+                .partitions(properties.topicPartitions())
+                .replicas(properties.topicReplicas())
+                .build();
+    }
+
+    @Bean
+    OutboxPublisher outboxPublisher(JdbcClient jdbc, PlatformTransactionManager transactionManager,
+                                    KafkaTemplate<String, String> kafka, OutboxProperties properties) {
+        return new OutboxPublisher(jdbc, transactionManager, kafka, properties);
     }
 }

@@ -8,6 +8,16 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/orders}
     username: ${DB_USER:orders}
     password: ${DB_PASSWORD:orders}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      # Wait for every in-sync replica, and let the producer drop its own retried duplicates.
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.block.ms: 5000
+        request.timeout.ms: 5000
+        delivery.timeout.ms: 10000
 
 server:
   port: 8082
@@ -25,9 +35,23 @@ flashseat:
     cleanup:
       enabled: true
       interval: 1h
+  outbox:
+    topic: order.events
+    topic-partitions: 6
+    topic-replicas: 1
+    batch-size: 100
+    send-timeout: 10s
+    publisher:
+      enabled: true
+      interval: 500ms
 
 management:
   endpoint:
     health:
       probes:
         enabled: true
+
+logging:
+  level:
+    # The Kafka client prints its whole configuration at INFO on every start.
+    org.apache.kafka: WARN
