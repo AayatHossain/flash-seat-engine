@@ -7,8 +7,7 @@ import com.flashseat.inventory.hold.Hold;
 import com.flashseat.inventory.hold.HoldService;
 import com.flashseat.inventory.hold.HoldStateException;
 import com.flashseat.inventory.hold.HoldStateException.Problem;
-import com.flashseat.inventory.ratelimit.InMemoryRateLimiter;
-import com.flashseat.inventory.ratelimit.RateLimitDecision;
+import com.flashseat.inventory.ratelimit.RateLimiter;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,9 +29,9 @@ public class HoldController {
 
     private final HoldService holds;
     private final AdmissionTokenService admissions;
-    private final InMemoryRateLimiter rateLimiter;
+    private final RateLimiter rateLimiter;
 
-    public HoldController(HoldService holds, AdmissionTokenService admissions, InMemoryRateLimiter rateLimiter) {
+    public HoldController(HoldService holds, AdmissionTokenService admissions, RateLimiter rateLimiter) {
         this.holds = holds;
         this.admissions = admissions;
         this.rateLimiter = rateLimiter;
@@ -76,7 +75,7 @@ public class HoldController {
             case Rejected rejected -> throw new AdmissionRejectedException(rejected.reason());
         };
 
-        RateLimitDecision decision = rateLimiter.tryAcquire(userId);
+        RateLimiter.Result decision = rateLimiter.tryAcquire(userId);
         if (!decision.allowed()) {
             throw new RateLimitedException(decision.retryAfter());
         }

@@ -29,6 +29,8 @@ flashseat:
     secret: ${ADMISSION_SECRET:local-development-only-secret-0123456789}
     validity: 10m
   rate-limit:
+    # "redis" shares limits across all replicas; "memory" keeps them per instance (useful without Redis).
+    store: ${RATE_LIMIT_STORE:redis}
     capacity: 5
     refill-per-second: 1.0
   waiting-room:

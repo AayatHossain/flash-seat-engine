@@ -7,9 +7,9 @@ import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Keeps one bucket per key (for example, per user) in this JVM.
- * Limits are per instance only; the Redis version shares them across all replicas.
+ * Limits are per instance only; {@link RedisRateLimiter} shares them across all replicas.
  */
-public class InMemoryRateLimiter {
+public class InMemoryRateLimiter implements RateLimiter {
 
     private final TokenBucket bucket;
     private final InstantSource clock;
@@ -20,7 +20,8 @@ public class InMemoryRateLimiter {
         this.clock = clock;
     }
 
-    public RateLimitDecision tryAcquire(String key) {
+    @Override
+    public Result tryAcquire(String key) {
         AtomicReference<RateLimitDecision> decision = new AtomicReference<>();
         // compute() runs atomically per key, so two threads can never spend the same token.
         buckets.compute(key, (k, current) -> {
@@ -28,6 +29,6 @@ public class InMemoryRateLimiter {
             decision.set(result);
             return result.newState();
         });
-        return decision.get();
+        return new Result(decision.get().allowed(), decision.get().retryAfter());
     }
 }
