@@ -2,6 +2,8 @@ package com.flashseat.order.api;
 
 import com.flashseat.order.domain.OrderCreationException;
 import com.flashseat.order.inventory.InventoryException;
+import com.flashseat.order.payment.PaymentException;
+import com.flashseat.order.payment.PaymentGatewayException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -39,6 +41,24 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             case OrderCreationException.AlreadyOrdered alreadyOrdered ->
                     problem(HttpStatus.CONFLICT, "order-already-exists", "Order already exists", e.getMessage());
         };
+    }
+
+    @ExceptionHandler(PaymentException.class)
+    ProblemDetail payment(PaymentException e) {
+        return switch (e) {
+            case PaymentException.OrderNotFound notFound ->
+                    problem(HttpStatus.NOT_FOUND, "order-not-found", "Order not found", e.getMessage());
+            case PaymentException.NotPayable notPayable ->
+                    problem(HttpStatus.CONFLICT, "order-not-payable", "Order not payable", e.getMessage());
+            case PaymentException.HoldNotActive notActive ->
+                    problem(HttpStatus.CONFLICT, "hold-not-active", "Hold not active", e.getMessage());
+        };
+    }
+
+    @ExceptionHandler(PaymentGatewayException.class)
+    ProblemDetail paymentProvider(PaymentGatewayException e) {
+        return problem(HttpStatus.BAD_GATEWAY, "payment-provider-unavailable", "Payment provider unavailable",
+                "The payment provider did not respond, please retry");
     }
 
     @ExceptionHandler(IdempotencyConflictException.class)

@@ -8,7 +8,10 @@ import com.flashseat.order.inventory.InventoryProperties;
 import com.flashseat.order.inventory.RestInventoryClient;
 import com.flashseat.order.outbox.OutboxProperties;
 import com.flashseat.order.outbox.OutboxPublisher;
+import com.flashseat.order.payment.FakePaymentGateway;
+import com.flashseat.order.payment.PaymentGateway;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -43,6 +46,12 @@ public class OrderBeans {
 
         RestClient rest = builder.baseUrl(properties.baseUrl()).requestFactory(requestFactory).build();
         return new RestInventoryClient(rest);
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "flashseat.payments.provider", havingValue = "fake", matchIfMissing = true)
+    PaymentGateway fakePaymentGateway() {
+        return new FakePaymentGateway();
     }
 
     @Bean

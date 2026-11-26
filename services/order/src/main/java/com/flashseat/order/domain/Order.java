@@ -10,5 +10,6 @@ public record Order(UUID id,
                     List<String> seatIds,
                     OrderStatus status,
                     long amountCents,
-                    String currency) {
+                    String currency,
+                    String paymentIntentId) {
 }

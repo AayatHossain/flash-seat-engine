@@ -35,6 +35,9 @@ flashseat:
     cleanup:
       enabled: true
       interval: 1h
+  payments:
+    # "fake" behaves like Stripe in memory; "stripe" will use the real Stripe test API.
+    provider: ${PAYMENT_PROVIDER:fake}
   outbox:
     topic: order.events
     topic-partitions: 6
