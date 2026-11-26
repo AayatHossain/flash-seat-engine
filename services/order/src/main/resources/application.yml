@@ -4,9 +4,23 @@ spring:
   threads:
     virtual:
       enabled: true
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/orders}
+    username: ${DB_USER:orders}
+    password: ${DB_PASSWORD:orders}
 
 server:
   port: 8082
+
+flashseat:
+  idempotency:
+    # How long a request may run before a retry is allowed to take over its key.
+    lease: 30s
+    # How long finished keys are remembered.
+    retention: 24h
+    cleanup:
+      enabled: true
+      interval: 1h
 
 management:
   endpoint:

@@ -1,0 +1,7 @@
+# Test-only overrides. Spring Boot also loads src/main/resources/application.yml; this file wins where both set a value.
+flashseat:
+  idempotency:
+    lease: 2s
+    cleanup:
+      # Tests call the cleanup directly, so the background schedule must not run.
+      enabled: false

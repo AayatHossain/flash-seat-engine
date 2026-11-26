@@ -5,6 +5,7 @@ import com.flashseat.order.idempotency.IdempotencyOutcome.KeyReused;
 import com.flashseat.order.idempotency.IdempotencyOutcome.Replayed;
 import com.flashseat.order.idempotency.IdempotencyOutcome.StillInProgress;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.support.TransactionOperations;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -22,7 +23,8 @@ class IdempotencyServiceTest {
 
     private static final StoredResponse CREATED = new StoredResponse(201, "{\"orderId\":\"o-1\"}");
 
-    private final IdempotencyService service = new IdempotencyService(new InMemoryIdempotencyStore());
+    private final IdempotencyService service =
+            new IdempotencyService(new InMemoryIdempotencyStore(), TransactionOperations.withoutTransaction());
     private final AtomicInteger actionRuns = new AtomicInteger();
 
     @Test

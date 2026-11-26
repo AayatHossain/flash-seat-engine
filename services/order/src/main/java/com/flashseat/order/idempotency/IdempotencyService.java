@@ -5,6 +5,8 @@ import com.flashseat.order.idempotency.IdempotencyOutcome.KeyReused;
 import com.flashseat.order.idempotency.IdempotencyOutcome.Replayed;
 import com.flashseat.order.idempotency.IdempotencyOutcome.StillInProgress;
 
+import org.springframework.transaction.support.TransactionOperations;
+
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -17,9 +19,11 @@ public class IdempotencyService {
     private static final int MAX_KEY_LENGTH = 255;
 
     private final IdempotencyStore store;
+    private final TransactionOperations transactions;
 
-    public IdempotencyService(IdempotencyStore store) {
+    public IdempotencyService(IdempotencyStore store, TransactionOperations transactions) {
         this.store = store;
+        this.transactions = transactions;
     }
 
     public IdempotencyOutcome execute(String key, RequestFingerprint fingerprint, Supplier<StoredResponse> action) {
@@ -47,13 +51,18 @@ public class IdempotencyService {
     private IdempotencyOutcome runAndRemember(String key, Supplier<StoredResponse> action) {
         StoredResponse response;
         try {
-            response = action.get();
+            // The action's own writes and the saved response commit together. A crash in between leaves
+            // neither behind, so a retry can never find the work done but the response missing.
+            response = transactions.execute(status -> {
+                StoredResponse result = action.get();
+                store.complete(key, result);
+                return result;
+            });
         } catch (RuntimeException e) {
             // Nothing was saved for this request, so free the key and let the client try again.
             store.release(key);
             throw e;
         }
-        store.complete(key, response);
         return new Executed(response);
     }
 
