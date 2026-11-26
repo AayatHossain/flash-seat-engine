@@ -4,12 +4,48 @@ spring:
   threads:
     virtual:
       enabled: true
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/tickets}
+    username: ${DB_USER:tickets}
+    password: ${DB_PASSWORD:tickets}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ticket-worker
+      # A brand-new consumer group starts from the oldest event, so nothing published before it existed is missed.
+      auto-offset-reset: earliest
+    producer:
+      acks: all
+    listener:
+      # Threads per worker instance. Kafka spreads the topic's partitions across all threads of all instances.
+      concurrency: 3
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
 
 server:
   port: 8083
+
+flashseat:
+  tickets:
+    topic: order.events
+    dead-letter-topic: order.events.DLT
+    topic-partitions: 6
+    topic-replicas: 1
+    # The default is for local development only. Real deployments pass TICKET_SECRET from a secret store.
+    secret: ${TICKET_SECRET:local-development-only-ticket-secret-0123}
+    from-address: tickets@flashseat.test
+    # Placeholder until a user service exists: buyers are emailed at <userId>@<this domain>.
+    recipient-domain: ${RECIPIENT_DOMAIN:users.flashseat.test}
+    max-attempts: 3
+    retry-backoff: 1s
 
 management:
   endpoint:
     health:
       probes:
         enabled: true
+
+logging:
+  level:
+    org.apache.kafka: WARN

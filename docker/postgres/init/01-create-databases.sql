@@ -4,3 +4,6 @@ CREATE DATABASE inventory OWNER inventory;
 
 CREATE USER orders WITH PASSWORD 'orders';
 CREATE DATABASE orders OWNER orders;
+
+CREATE USER tickets WITH PASSWORD 'tickets';
+CREATE DATABASE tickets OWNER tickets;

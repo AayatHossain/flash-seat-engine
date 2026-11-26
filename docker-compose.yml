@@ -60,6 +60,13 @@ services:
       retries: 12
       start_period: 15s
 
+  # Catches every email the system sends. Open http://localhost:8025 to read them.
+  mailpit:
+    image: axllent/mailpit:v1.34.0
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
 volumes:
   postgres-data:
   redis-data:
