@@ -8,6 +8,10 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/inventory}
     username: ${DB_USER:inventory}
     password: ${DB_PASSWORD:inventory}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
 
 server:
   port: 8081
@@ -27,6 +31,9 @@ flashseat:
   rate-limit:
     capacity: 5
     refill-per-second: 1.0
+  waiting-room:
+    admit-per-second: 100
+    queue-retention: 2d
 
 management:
   endpoint:

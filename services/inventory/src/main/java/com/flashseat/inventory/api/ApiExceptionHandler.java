@@ -2,6 +2,7 @@ package com.flashseat.inventory.api;
 
 import com.flashseat.inventory.hold.HoldStateException;
 import com.flashseat.inventory.hold.SeatsUnavailableException;
+import com.flashseat.inventory.waitingroom.WaitingRoomException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -25,6 +26,16 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             case NOT_FOUND -> problem(HttpStatus.NOT_FOUND, "hold-not-found", "Hold not found", e.getMessage());
             case EXPIRED -> problem(HttpStatus.GONE, "hold-expired", "Hold expired", e.getMessage());
             case CONFIRMED, NOT_ACTIVE -> problem(HttpStatus.CONFLICT, "hold-not-active", "Hold not active", e.getMessage());
+        };
+    }
+
+    @ExceptionHandler(WaitingRoomException.class)
+    ProblemDetail waitingRoom(WaitingRoomException e) {
+        return switch (e) {
+            case WaitingRoomException.EventNotFound notFound ->
+                    problem(HttpStatus.NOT_FOUND, "event-not-found", "Event not found", e.getMessage());
+            case WaitingRoomException.NotInQueue notInQueue ->
+                    problem(HttpStatus.NOT_FOUND, "not-in-queue", "Not in queue", e.getMessage());
         };
     }
 

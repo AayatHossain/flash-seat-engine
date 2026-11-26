@@ -8,3 +8,6 @@ flashseat:
   rate-limit:
     capacity: 5
     refill-per-second: 0.1
+  waiting-room:
+    # Slow on purpose, so tests can tell admitted buyers from waiting ones.
+    admit-per-second: 2
