@@ -6,9 +6,16 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-public record HoldResponse(UUID holdId, UUID eventId, String status, List<String> seatIds, Instant expiresAt) {
+public record HoldResponse(UUID holdId,
+                           UUID eventId,
+                           String userId,
+                           String status,
+                           List<String> seatIds,
+                           long totalPriceCents,
+                           Instant expiresAt) {
 
     static HoldResponse from(Hold hold) {
-        return new HoldResponse(hold.id(), hold.eventId(), hold.status(), hold.seatIds(), hold.expiresAt());
+        return new HoldResponse(hold.id(), hold.eventId(), hold.userId(), hold.status(), hold.seatIds(),
+                hold.totalPriceCents(), hold.expiresAt());
     }
 }

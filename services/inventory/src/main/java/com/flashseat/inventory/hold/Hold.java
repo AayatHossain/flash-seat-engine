@@ -4,5 +4,11 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-public record Hold(UUID id, UUID eventId, String userId, String status, List<String> seatIds, Instant expiresAt) {
+public record Hold(UUID id,
+                   UUID eventId,
+                   String userId,
+                   String status,
+                   List<String> seatIds,
+                   long totalPriceCents,
+                   Instant expiresAt) {
 }

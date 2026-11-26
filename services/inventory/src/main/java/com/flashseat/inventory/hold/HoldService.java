@@ -45,7 +45,7 @@ public class HoldService {
 
         // Seats are locked in seat_id order, so two buyers who ask for the same seats
         // in a different order wait for each other instead of deadlocking.
-        int claimed = jdbc.sql("""
+        List<Long> claimedPrices = jdbc.sql("""
                         UPDATE seats
                         SET status = 'HELD', hold_id = :holdId, version = version + 1
                         WHERE (event_id, seat_id) IN (
@@ -54,27 +54,34 @@ public class HoldService {
                             WHERE event_id = :eventId AND seat_id IN (:seatIds) AND status = 'AVAILABLE'
                             ORDER BY seat_id
                             FOR UPDATE)
+                        RETURNING price_cents
                         """)
                 .param("holdId", holdId)
                 .param("eventId", eventId)
                 .param("seatIds", seatIds)
-                .update();
+                .query(Long.class)
+                .list();
 
-        if (claimed != seatIds.size()) {
+        if (claimedPrices.size() != seatIds.size()) {
             // Throwing rolls back the whole transaction, hold row included: the buyer gets all seats or none.
             throw new SeatsUnavailableException(eventId, seatIds);
         }
-        return new Hold(holdId, eventId, userId, "ACTIVE", List.copyOf(seatIds), expiresAt.toInstant());
+        long totalPriceCents = claimedPrices.stream().mapToLong(Long::longValue).sum();
+        return new Hold(holdId, eventId, userId, "ACTIVE", List.copyOf(seatIds), totalPriceCents, expiresAt.toInstant());
     }
 
     public Optional<Hold> findHold(UUID eventId, UUID holdId) {
-        List<String> seatIds = jdbc.sql("""
-                        SELECT seat_id FROM seats WHERE event_id = :eventId AND hold_id = :holdId ORDER BY seat_id
+        List<HeldSeat> seats = jdbc.sql("""
+                        SELECT seat_id, price_cents FROM seats
+                        WHERE event_id = :eventId AND hold_id = :holdId
+                        ORDER BY seat_id
                         """)
                 .param("eventId", eventId)
                 .param("holdId", holdId)
-                .query(String.class)
+                .query((row, rowNum) -> new HeldSeat(row.getString("seat_id"), row.getLong("price_cents")))
                 .list();
+        List<String> seatIds = seats.stream().map(HeldSeat::seatId).toList();
+        long totalPriceCents = seats.stream().mapToLong(HeldSeat::priceCents).sum();
 
         return jdbc.sql("SELECT id, event_id, user_id, status, expires_at FROM holds WHERE event_id = :eventId AND id = :holdId")
                 .param("eventId", eventId)
@@ -85,8 +92,12 @@ public class HoldService {
                         row.getString("user_id"),
                         row.getString("status"),
                         seatIds,
+                        totalPriceCents,
                         row.getObject("expires_at", OffsetDateTime.class).toInstant()))
                 .optional();
+    }
+
+    private record HeldSeat(String seatId, long priceCents) {
     }
 
     @Transactional

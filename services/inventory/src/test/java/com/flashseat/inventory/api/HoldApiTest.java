@@ -51,6 +51,7 @@ class HoldApiTest {
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.seatIds[0]").value("A-1"))
                 .andExpect(jsonPath("$.seatIds[1]").value("A-2"))
+                .andExpect(jsonPath("$.totalPriceCents").value(10_000))
                 .andExpect(jsonPath("$.expiresAt").exists());
     }
 

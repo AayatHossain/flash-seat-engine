@@ -13,6 +13,10 @@ server:
   port: 8082
 
 flashseat:
+  inventory:
+    base-url: ${INVENTORY_URL:http://localhost:8081}
+    connect-timeout: 1s
+    read-timeout: 2s
   idempotency:
     # How long a request may run before a retry is allowed to take over its key.
     lease: 30s
