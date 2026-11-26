@@ -81,6 +81,20 @@ class RestInventoryClientTest {
     }
 
     @Test
+    void confirmAnswersAreTranslated() {
+        String confirmUrl = "http://inventory/internal/events/" + EVENT + "/holds/" + HOLD + "/confirm";
+        server.expect(requestTo(confirmUrl)).andRespond(withStatus(HttpStatus.NO_CONTENT));
+        server.expect(requestTo(confirmUrl)).andRespond(withStatus(HttpStatus.GONE));
+        server.expect(requestTo(confirmUrl)).andRespond(withStatus(HttpStatus.CONFLICT));
+        server.expect(requestTo(confirmUrl)).andRespond(withServerError());
+
+        assertThat(client.confirmHold(EVENT, HOLD)).isEqualTo(InventoryClient.ConfirmResult.CONFIRMED);
+        assertThat(client.confirmHold(EVENT, HOLD)).isEqualTo(InventoryClient.ConfirmResult.EXPIRED);
+        assertThat(client.confirmHold(EVENT, HOLD)).isEqualTo(InventoryClient.ConfirmResult.NOT_ACTIVE);
+        assertThatThrownBy(() -> client.confirmHold(EVENT, HOLD)).isInstanceOf(InventoryException.Unavailable.class);
+    }
+
+    @Test
     void serverErrorBecomesUnavailable() {
         server.expect(requestTo(HOLD_URL)).andRespond(withServerError());
 

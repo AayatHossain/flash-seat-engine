@@ -4,6 +4,7 @@ import com.flashseat.order.domain.OrderCreationException;
 import com.flashseat.order.inventory.InventoryException;
 import com.flashseat.order.payment.PaymentException;
 import com.flashseat.order.payment.PaymentGatewayException;
+import com.flashseat.order.payment.WebhookSignatureVerifier;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -61,6 +62,11 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
                 "The payment provider did not respond, please retry");
     }
 
+    @ExceptionHandler(WebhookSignatureVerifier.InvalidSignatureException.class)
+    ProblemDetail invalidSignature(WebhookSignatureVerifier.InvalidSignatureException e) {
+        return problem(HttpStatus.BAD_REQUEST, "invalid-signature", "Invalid signature", e.getMessage());
+    }
+
     @ExceptionHandler(IdempotencyConflictException.class)
     ProblemDetail idempotencyConflict(IdempotencyConflictException e) {
         return e.isKeyReused()
@@ -70,7 +76,7 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler({IllegalArgumentException.class, JacksonException.class})
     ProblemDetail badRequest(RuntimeException e) {
-        String detail = e instanceof JacksonException ? "Request body is not valid JSON for an order" : e.getMessage();
+        String detail = e instanceof JacksonException ? "Request body is not valid JSON" : e.getMessage();
         return problem(HttpStatus.BAD_REQUEST, "invalid-request", "Invalid request", detail);
     }
 

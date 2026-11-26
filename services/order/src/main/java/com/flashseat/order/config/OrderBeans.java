@@ -10,6 +10,8 @@ import com.flashseat.order.outbox.OutboxProperties;
 import com.flashseat.order.outbox.OutboxPublisher;
 import com.flashseat.order.payment.FakePaymentGateway;
 import com.flashseat.order.payment.PaymentGateway;
+import com.flashseat.order.payment.PaymentProperties;
+import com.flashseat.order.payment.WebhookSignatureVerifier;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -23,6 +25,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.RestClient;
 
 import java.net.http.HttpClient;
+import java.time.InstantSource;
 
 @Configuration
 public class OrderBeans {
@@ -52,6 +55,11 @@ public class OrderBeans {
     @ConditionalOnProperty(name = "flashseat.payments.provider", havingValue = "fake", matchIfMissing = true)
     PaymentGateway fakePaymentGateway() {
         return new FakePaymentGateway();
+    }
+
+    @Bean
+    WebhookSignatureVerifier webhookSignatureVerifier(PaymentProperties properties) {
+        return new WebhookSignatureVerifier(properties.webhookSecret(), properties.webhookTolerance(), InstantSource.system());
     }
 
     @Bean

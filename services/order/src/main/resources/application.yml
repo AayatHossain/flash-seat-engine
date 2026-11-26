@@ -38,6 +38,10 @@ flashseat:
   payments:
     # "fake" behaves like Stripe in memory; "stripe" will use the real Stripe test API.
     provider: ${PAYMENT_PROVIDER:fake}
+    # The default is for local development only. Real deployments pass the provider's signing secret.
+    webhook-secret: ${PAYMENT_WEBHOOK_SECRET:whsec_local_development_only}
+    # Webhooks signed longer ago than this are refused, so a captured one cannot be replayed.
+    webhook-tolerance: 5m
   outbox:
     topic: order.events
     topic-partitions: 6

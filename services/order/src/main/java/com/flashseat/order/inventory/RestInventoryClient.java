@@ -44,6 +44,23 @@ public class RestInventoryClient implements InventoryClient {
         }
     }
 
+    @Override
+    public ConfirmResult confirmHold(UUID eventId, UUID holdId) {
+        try {
+            return rest.post()
+                    .uri("/internal/events/{eventId}/holds/{holdId}/confirm", eventId, holdId)
+                    .exchange((request, response) -> switch (response.getStatusCode().value()) {
+                        case 204 -> ConfirmResult.CONFIRMED;
+                        case 410 -> ConfirmResult.EXPIRED;
+                        case 404, 409 -> ConfirmResult.NOT_ACTIVE;
+                        default -> throw new InventoryException.Unavailable(
+                                "Inventory answered " + response.getStatusCode() + " to a confirm", null);
+                    });
+        } catch (ResourceAccessException e) {
+            throw new InventoryException.Unavailable("Inventory is unreachable", e);
+        }
+    }
+
     private static Duration retryAfter(HttpHeaders headers) {
         String value = headers.getFirst(HttpHeaders.RETRY_AFTER);
         try {

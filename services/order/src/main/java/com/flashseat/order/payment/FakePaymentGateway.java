@@ -13,6 +13,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public class FakePaymentGateway implements PaymentGateway {
 
     private final Map<String, PaymentIntent> paymentsByKey = new ConcurrentHashMap<>();
+    private final Map<String, String> refundsByKey = new ConcurrentHashMap<>();
 
     @Override
     public PaymentIntent createPayment(PaymentRequest request) {
@@ -25,8 +26,17 @@ public class FakePaymentGateway implements PaymentGateway {
         return payment;
     }
 
+    @Override
+    public String refund(String paymentIntentId, String idempotencyKey) {
+        return refundsByKey.computeIfAbsent(idempotencyKey, key -> "re_fake_" + UUID.randomUUID().toString().replace("-", ""));
+    }
+
     public int paymentCount() {
         return paymentsByKey.size();
+    }
+
+    public int refundCount() {
+        return refundsByKey.size();
     }
 
     private static PaymentIntent newPayment(PaymentRequest request) {

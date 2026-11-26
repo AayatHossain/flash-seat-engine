@@ -7,6 +7,8 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -59,22 +61,63 @@ public class OrderService {
     }
 
     public Optional<Order> findOrder(UUID orderId) {
-        return jdbc.sql("""
-                        SELECT id, user_id, event_id, hold_id, seat_ids, status, amount_cents, currency, payment_intent_id
-                        FROM orders WHERE id = :id
-                        """)
+        return jdbc.sql(SELECT_ORDER + " WHERE id = :id")
                 .param("id", orderId)
-                .query((row, rowNum) -> new Order(
-                        row.getObject("id", UUID.class),
-                        row.getString("user_id"),
-                        row.getObject("event_id", UUID.class),
-                        row.getObject("hold_id", UUID.class),
-                        List.of((String[]) row.getArray("seat_ids").getArray()),
-                        OrderStatus.valueOf(row.getString("status")),
-                        row.getLong("amount_cents"),
-                        row.getString("currency"),
-                        row.getString("payment_intent_id")))
+                .query(OrderService::mapOrder)
                 .optional();
+    }
+
+    public Optional<Order> findByPaymentIntent(String paymentIntentId) {
+        return jdbc.sql(SELECT_ORDER + " WHERE payment_intent_id = :paymentIntentId")
+                .param("paymentIntentId", paymentIntentId)
+                .query(OrderService::mapOrder)
+                .optional();
+    }
+
+    /**
+     * Moves an order to the next status and records the matching event, in one transaction.
+     * The update only applies if the order is still in the status we read, so when two webhooks race,
+     * exactly one of them makes the change and writes the event. Returns whether this call made it.
+     */
+    @Transactional
+    public boolean transition(Order order, OrderStatus next, String eventType, Object event) {
+        order.status().moveTo(next);
+        int updated = jdbc.sql("""
+                        UPDATE orders SET status = :next, version = version + 1, updated_at = now()
+                        WHERE id = :id AND status = :current
+                        """)
+                .param("next", next.name())
+                .param("id", order.id())
+                .param("current", order.status().name())
+                .update();
+        if (updated == 0) {
+            return false;
+        }
+        outbox.append("order", order.id().toString(), eventType, event);
+        return true;
+    }
+
+    /** Records something that happened to an order without changing its status. */
+    @Transactional
+    public void recordEvent(Order order, String eventType, Object event) {
+        outbox.append("order", order.id().toString(), eventType, event);
+    }
+
+    private static final String SELECT_ORDER = """
+            SELECT id, user_id, event_id, hold_id, seat_ids, status, amount_cents, currency, payment_intent_id
+            FROM orders""";
+
+    private static Order mapOrder(ResultSet row, int rowNum) throws SQLException {
+        return new Order(
+                row.getObject("id", UUID.class),
+                row.getString("user_id"),
+                row.getObject("event_id", UUID.class),
+                row.getObject("hold_id", UUID.class),
+                List.of((String[]) row.getArray("seat_ids").getArray()),
+                OrderStatus.valueOf(row.getString("status")),
+                row.getLong("amount_cents"),
+                row.getString("currency"),
+                row.getString("payment_intent_id"));
     }
 
     /**

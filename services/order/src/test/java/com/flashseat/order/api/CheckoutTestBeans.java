@@ -33,10 +33,14 @@ class CheckoutTestBeans {
 
         @Override
         public PaymentIntent createPayment(PaymentRequest request) {
-            if (down) {
-                throw new PaymentGatewayException("Simulated outage", null);
-            }
+            failIfDown();
             return delegate.createPayment(request);
+        }
+
+        @Override
+        public String refund(String paymentIntentId, String idempotencyKey) {
+            failIfDown();
+            return delegate.refund(paymentIntentId, idempotencyKey);
         }
 
         void setDown(boolean down) {
@@ -45,6 +49,16 @@ class CheckoutTestBeans {
 
         int paymentCount() {
             return delegate.paymentCount();
+        }
+
+        int refundCount() {
+            return delegate.refundCount();
+        }
+
+        private void failIfDown() {
+            if (down) {
+                throw new PaymentGatewayException("Simulated outage", null);
+            }
         }
     }
 }
