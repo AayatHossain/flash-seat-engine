@@ -1,0 +1,80 @@
+# SLO: 99% of seat-hold requests succeed (no server error) and answer within 200 ms.
+# A rejected hold (seat taken, rate limited) is a correct, fast answer and counts as good.
+# Burn rate = how fast the 1% error budget is being spent: 1 means exactly on budget for the whole window.
+groups:
+  - name: hold-slo
+    rules:
+      - record: slo:hold_requests:burn_rate5m
+        expr: |
+          (1 - (
+            sum(rate(http_server_requests_seconds_bucket{application="inventory", method="POST", uri="/events/{eventId}/holds", le="0.2", outcome!="SERVER_ERROR"}[5m]))
+            /
+            sum(rate(http_server_requests_seconds_count{application="inventory", method="POST", uri="/events/{eventId}/holds"}[5m]))
+          )) / 0.01
+      - record: slo:hold_requests:burn_rate30m
+        expr: |
+          (1 - (
+            sum(rate(http_server_requests_seconds_bucket{application="inventory", method="POST", uri="/events/{eventId}/holds", le="0.2", outcome!="SERVER_ERROR"}[30m]))
+            /
+            sum(rate(http_server_requests_seconds_count{application="inventory", method="POST", uri="/events/{eventId}/holds"}[30m]))
+          )) / 0.01
+      - record: slo:hold_requests:burn_rate1h
+        expr: |
+          (1 - (
+            sum(rate(http_server_requests_seconds_bucket{application="inventory", method="POST", uri="/events/{eventId}/holds", le="0.2", outcome!="SERVER_ERROR"}[1h]))
+            /
+            sum(rate(http_server_requests_seconds_count{application="inventory", method="POST", uri="/events/{eventId}/holds"}[1h]))
+          )) / 0.01
+      - record: slo:hold_requests:burn_rate6h
+        expr: |
+          (1 - (
+            sum(rate(http_server_requests_seconds_bucket{application="inventory", method="POST", uri="/events/{eventId}/holds", le="0.2", outcome!="SERVER_ERROR"}[6h]))
+            /
+            sum(rate(http_server_requests_seconds_count{application="inventory", method="POST", uri="/events/{eventId}/holds"}[6h]))
+          )) / 0.01
+
+      # Multi-window alerts (Google SRE workbook): the long window proves the problem is real,
+      # the short one proves it is still happening, so alerts fire fast and clear fast.
+      - alert: HoldSloFastBurn
+        expr: slo:hold_requests:burn_rate1h > 14.4 and slo:hold_requests:burn_rate5m > 14.4
+        for: 1m
+        labels: { severity: page }
+        annotations:
+          summary: Seat holds are burning the error budget 14x too fast (2% of a 30-day budget per hour)
+      - alert: HoldSloSlowBurn
+        expr: slo:hold_requests:burn_rate6h > 6 and slo:hold_requests:burn_rate30m > 6
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: Seat holds are steadily burning the error budget 6x too fast
+
+  - name: pipeline
+    rules:
+      # A stopped container leaves Docker's DNS, so with replicas still running its target just disappears.
+      # ReplicaDown catches a replica that is listed but not answering. ServiceDown catches a whole service gone:
+      # either its last targets are kept and all report down, or no target is left at all.
+      - alert: ReplicaDown
+        expr: up == 0
+        for: 1m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.job }} replica {{ $labels.instance }} is not answering scrapes"
+      - alert: ServiceDown
+        expr: |
+          sum by (job) (up) == 0
+          or absent(up{job="inventory"}) or absent(up{job="order"}) or absent(up{job="worker"})
+        for: 1m
+        labels: { severity: page }
+        annotations:
+          summary: "No healthy {{ $labels.job }} replica is running"
+      - alert: OutboxStuck
+        expr: max(flashseat_outbox_oldest_age_seconds) > 30
+        for: 1m
+        labels: { severity: page }
+        annotations:
+          summary: An order event has waited over 30 s to reach Kafka; tickets are not being issued
+      - alert: EventsDeadLettered
+        expr: sum(increase(flashseat_events_dead_lettered_total[10m])) > 0
+        labels: { severity: ticket }
+        annotations:
+          summary: The ticket worker parked events on order.events.DLT; they need a look

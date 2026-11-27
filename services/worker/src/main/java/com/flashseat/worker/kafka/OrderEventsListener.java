@@ -3,6 +3,8 @@ package com.flashseat.worker.kafka;
 import com.flashseat.worker.ticket.InvalidEventException;
 import com.flashseat.worker.ticket.OrderPaid;
 import com.flashseat.worker.ticket.TicketIssuer;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.Header;
 import org.slf4j.Logger;
@@ -21,10 +23,14 @@ public class OrderEventsListener {
 
     private final TicketIssuer tickets;
     private final JsonMapper json;
+    private final Counter ticketsIssued;
+    private final Counter duplicatesSkipped;
 
-    public OrderEventsListener(TicketIssuer tickets, JsonMapper json) {
+    public OrderEventsListener(TicketIssuer tickets, JsonMapper json, MeterRegistry metrics) {
         this.tickets = tickets;
         this.json = json;
+        this.ticketsIssued = metrics.counter("flashseat.tickets.issued");
+        this.duplicatesSkipped = metrics.counter("flashseat.events.duplicates");
     }
 
     @KafkaListener(topics = "${flashseat.tickets.topic}")
@@ -46,7 +52,10 @@ public class OrderEventsListener {
         }
 
         if (tickets.issueTickets(eventId, order)) {
+            ticketsIssued.increment(order.seatIds().size());
             log.info("Issued {} tickets for order {}", order.seatIds().size(), order.orderId());
+        } else {
+            duplicatesSkipped.increment();
         }
     }
 

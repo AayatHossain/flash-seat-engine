@@ -10,6 +10,7 @@ import com.flashseat.inventory.ratelimit.RateLimitProperties;
 import com.flashseat.inventory.ratelimit.RateLimiter;
 import com.flashseat.inventory.ratelimit.RedisRateLimiter;
 import com.flashseat.inventory.ratelimit.TokenBucket;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -35,8 +36,8 @@ public class InventoryBeans {
 
     @Bean
     EventPageCache eventPageCache(StringRedisTemplate redis, JsonMapper json, EventCatalog catalog,
-                                  EventPageProperties properties) {
-        return new EventPageCache(redis, json, catalog::loadEventPage, properties);
+                                  EventPageProperties properties, MeterRegistry metrics) {
+        return new EventPageCache(redis, json, catalog::loadEventPage, properties, metrics);
     }
 
     @Bean

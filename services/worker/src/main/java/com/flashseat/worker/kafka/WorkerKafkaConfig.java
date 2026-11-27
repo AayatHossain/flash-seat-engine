@@ -2,6 +2,8 @@ package com.flashseat.worker.kafka;
 
 import com.flashseat.worker.ticket.InvalidEventException;
 import com.flashseat.worker.ticket.TicketProperties;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.TopicPartition;
 import org.springframework.context.annotation.Bean;
@@ -20,12 +22,17 @@ public class WorkerKafkaConfig {
      * cannot block the messages behind it. Messages that can never succeed skip the retries.
      */
     @Bean
-    DefaultErrorHandler errorHandler(KafkaTemplate<Object, Object> kafka, TicketProperties properties) {
+    DefaultErrorHandler errorHandler(KafkaTemplate<Object, Object> kafka, TicketProperties properties,
+                                     MeterRegistry metrics) {
         DeadLetterPublishingRecoverer toDeadLetterTopic = new DeadLetterPublishingRecoverer(kafka,
                 (record, exception) -> new TopicPartition(properties.deadLetterTopic(), record.partition()));
+        Counter deadLettered = metrics.counter("flashseat.events.dead_lettered");
         FixedBackOff backOff = new FixedBackOff(properties.retryBackoff().toMillis(), properties.maxAttempts() - 1);
 
-        DefaultErrorHandler handler = new DefaultErrorHandler(toDeadLetterTopic, backOff);
+        DefaultErrorHandler handler = new DefaultErrorHandler((record, exception) -> {
+            toDeadLetterTopic.accept(record, exception);
+            deadLettered.increment();
+        }, backOff);
         handler.addNotRetryableExceptions(InvalidEventException.class);
         return handler;
     }

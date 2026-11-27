@@ -8,6 +8,8 @@ import com.flashseat.inventory.hold.HoldService;
 import com.flashseat.inventory.hold.HoldStateException;
 import com.flashseat.inventory.hold.HoldStateException.Problem;
 import com.flashseat.inventory.ratelimit.RateLimiter;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,11 +32,16 @@ public class HoldController {
     private final HoldService holds;
     private final AdmissionTokenService admissions;
     private final RateLimiter rateLimiter;
+    private final Counter holdsPlaced;
+    private final Counter seatsHeld;
 
-    public HoldController(HoldService holds, AdmissionTokenService admissions, RateLimiter rateLimiter) {
+    public HoldController(HoldService holds, AdmissionTokenService admissions, RateLimiter rateLimiter,
+                          MeterRegistry metrics) {
         this.holds = holds;
         this.admissions = admissions;
         this.rateLimiter = rateLimiter;
+        this.holdsPlaced = metrics.counter("flashseat.holds.placed");
+        this.seatsHeld = metrics.counter("flashseat.seats.held");
     }
 
     @PostMapping
@@ -44,6 +51,8 @@ public class HoldController {
         String userId = admittedUser(eventId, admissionToken);
 
         Hold hold = holds.placeHold(eventId, userId, request.seatIds());
+        holdsPlaced.increment();
+        seatsHeld.increment(hold.seatIds().size());
 
         URI location = URI.create("/events/" + eventId + "/holds/" + hold.id());
         return ResponseEntity.created(location).body(HoldResponse.from(hold));

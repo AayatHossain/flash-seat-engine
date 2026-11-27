@@ -136,7 +136,37 @@ services:
       inventory: { condition: service_healthy }
       order: { condition: service_healthy }
 
+  # Metrics: Prometheus at http://localhost:9090, dashboards at http://localhost:3000.
+  prometheus:
+    profiles: [apps]
+    image: prom/prometheus:v3.16.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+
+  grafana:
+    profiles: [apps]
+    image: grafana/grafana:13.3.2
+    ports:
+      - "3000:3000"
+    environment:
+      # Anyone on this machine may view dashboards without logging in; editing needs admin/admin.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/flash-seat-engine.json
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
 volumes:
   postgres-data:
   redis-data:
   kafka-data:
+  prometheus-data:

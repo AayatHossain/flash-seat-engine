@@ -4,6 +4,7 @@ import com.flashseat.worker.TestcontainersConfiguration;
 import com.flashseat.worker.TestcontainersConfiguration.MailpitContainer;
 import com.flashseat.worker.ticket.TicketProperties;
 import com.flashseat.worker.ticket.TicketSigner;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -57,13 +58,18 @@ class TicketWorkerTest {
     @Autowired
     private JsonMapper json;
 
+    @Autowired
+    private MeterRegistry metrics;
+
     @Test
     void paidOrderGetsOneSignedTicketPerSeatAndAnEmail() {
         PaidOrder order = new PaidOrder();
+        double issuedBefore = count("flashseat.tickets.issued");
 
         publish(order.key(), "OrderPaid", "evt-" + UUID.randomUUID(), order.json("A-1", "A-2"));
 
         await().atMost(Duration.ofSeconds(30)).until(() -> ticketCount(order) == 2);
+        await().atMost(Duration.ofSeconds(5)).until(() -> count("flashseat.tickets.issued") >= issuedBefore + 2);
         List<String> codes = jdbc.sql("SELECT code FROM tickets WHERE order_id = :orderId")
                 .param("orderId", order.orderId())
                 .query(String.class)
@@ -80,6 +86,7 @@ class TicketWorkerTest {
     void theSameEventDeliveredTwiceIssuesTicketsOnce() {
         PaidOrder order = new PaidOrder();
         String eventId = "evt-" + UUID.randomUUID();
+        double duplicatesBefore = count("flashseat.events.duplicates");
 
         publish(order.key(), "OrderPaid", eventId, order.json("A-1"));
         publish(order.key(), "OrderPaid", eventId, order.json("A-1"));
@@ -90,6 +97,7 @@ class TicketWorkerTest {
         await().pollDelay(Duration.ofSeconds(2)).atMost(Duration.ofSeconds(10)).until(() -> true);
         assertThat(ticketCount(order)).isEqualTo(1);
         assertThat(emailsTo(order)).hasSize(1);
+        assertThat(count("flashseat.events.duplicates")).isGreaterThanOrEqualTo(duplicatesBefore + 1);
     }
 
     @Test
@@ -111,6 +119,7 @@ class TicketWorkerTest {
     void brokenEventIsParkedOnTheDeadLetterTopicAndDoesNotBlockTheNextOne() {
         PaidOrder order = new PaidOrder();
         String brokenEventId = "evt-" + UUID.randomUUID();
+        double deadLetteredBefore = count("flashseat.events.dead_lettered");
 
         publish(order.key(), "OrderPaid", brokenEventId, "{ this is not json");
         publish(order.key(), "OrderPaid", "evt-" + UUID.randomUUID(), order.json("A-1"));
@@ -118,6 +127,11 @@ class TicketWorkerTest {
         await().atMost(Duration.ofSeconds(30)).until(() -> ticketCount(order) == 1);
         assertThat(deadLetterKeys(order.key())).containsExactly(order.key());
         assertThat(inboxHas(brokenEventId)).isFalse();
+        assertThat(count("flashseat.events.dead_lettered")).isEqualTo(deadLetteredBefore + 1);
+    }
+
+    private double count(String counter) {
+        return metrics.counter(counter).count();
     }
 
     private final class PaidOrder {

@@ -1,5 +1,6 @@
 package com.flashseat.inventory.catalog;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ClassPathResource;
@@ -36,25 +37,29 @@ public class EventPageCache {
     private final JsonMapper json;
     private final Function<UUID, Optional<EventPage>> loader;
     private final EventPageProperties properties;
+    private final MeterRegistry metrics;
 
-    public EventPageCache(StringRedisTemplate redis, JsonMapper json,
-                          Function<UUID, Optional<EventPage>> loader, EventPageProperties properties) {
+    public EventPageCache(StringRedisTemplate redis, JsonMapper json, Function<UUID, Optional<EventPage>> loader,
+                          EventPageProperties properties, MeterRegistry metrics) {
         this.redis = redis;
         this.json = json;
         this.loader = loader;
         this.properties = properties;
+        this.metrics = metrics;
     }
 
     public Optional<EventPage> get(UUID eventId) {
         try {
             String cached = redis.opsForValue().get(pageKey(eventId));
             if (cached != null) {
+                count(Lookup.HIT);
                 return decode(cached);
             }
             return rebuildOrWait(eventId);
         } catch (DataAccessException e) {
             // Redis trouble must not take the event page down; serve it straight from the database.
             log.warn("Event page cache unavailable, reading from the database: {}", e.getMessage());
+            count(Lookup.DATABASE_FALLBACK);
             return loader.apply(eventId);
         }
     }
@@ -67,6 +72,7 @@ public class EventPageCache {
                 Optional<EventPage> page = loader.apply(eventId);
                 String encoded = page.map(json::writeValueAsString).orElse(MISSING);
                 redis.opsForValue().set(pageKey(eventId), encoded, properties.ttl());
+                count(Lookup.REBUILT);
                 return page;
             } finally {
                 redis.execute(RELEASE_LOCK, List.of(lockKey(eventId)), lockToken);
@@ -78,11 +84,20 @@ public class EventPageCache {
             sleep(POLL_INTERVAL);
             String rebuilt = redis.opsForValue().get(pageKey(eventId));
             if (rebuilt != null) {
+                count(Lookup.WAITED_FOR_REBUILD);
                 return decode(rebuilt);
             }
         }
         // The rebuild is taking too long (its owner may have crashed). Load it ourselves rather than fail.
+        count(Lookup.DATABASE_FALLBACK);
         return loader.apply(eventId);
+    }
+
+    /** How a page was served. Every result except REBUILT and DATABASE_FALLBACK spared the database. */
+    enum Lookup { HIT, WAITED_FOR_REBUILD, REBUILT, DATABASE_FALLBACK }
+
+    private void count(Lookup lookup) {
+        metrics.counter("flashseat.event_page.lookups", "result", lookup.name().toLowerCase()).increment();
     }
 
     private Optional<EventPage> decode(String cached) {

@@ -1,5 +1,7 @@
 package com.flashseat.inventory.hold;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -39,11 +41,14 @@ public class HoldExpirySweeper {
     private final JdbcClient jdbc;
     private final TransactionTemplate transactions;
     private final int batchSize;
+    private final Counter holdsExpired;
 
-    public HoldExpirySweeper(JdbcClient jdbc, PlatformTransactionManager transactionManager, SweeperProperties properties) {
+    public HoldExpirySweeper(JdbcClient jdbc, PlatformTransactionManager transactionManager, SweeperProperties properties,
+                             MeterRegistry metrics) {
         this.jdbc = jdbc;
         this.transactions = new TransactionTemplate(transactionManager);
         this.batchSize = properties.batchSize();
+        this.holdsExpired = metrics.counter("flashseat.holds.expired");
     }
 
     /** Returns how many holds this call expired. */
@@ -52,6 +57,7 @@ public class HoldExpirySweeper {
         int expiredInBatch;
         do {
             expiredInBatch = transactions.execute(status -> expireOneBatch());
+            holdsExpired.increment(expiredInBatch);
             total += expiredInBatch;
         } while (expiredInBatch == batchSize);
         return total;

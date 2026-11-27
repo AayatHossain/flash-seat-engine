@@ -45,6 +45,25 @@ management:
     health:
       probes:
         enabled: true
+  endpoints:
+    web:
+      exposure:
+        # Prometheus scrapes each replica directly on the private network; NGINX never routes /actuator.
+        include: health, info, prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      # Real latency histograms, so percentiles can be summed across replicas in Prometheus.
+      percentiles-histogram:
+        http.server.requests: true
+      # Exact bucket edges at the SLO thresholds.
+      slo:
+        http.server.requests: 50ms, 100ms, 200ms, 500ms
+      minimum-expected-value:
+        http.server.requests: 1ms
+      maximum-expected-value:
+        http.server.requests: 10s
 
 logging:
   level:

@@ -1,6 +1,7 @@
 package com.flashseat.inventory.catalog;
 
 import com.flashseat.inventory.TestcontainersConfiguration;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -39,10 +40,12 @@ class EventPageCacheTest {
     @Autowired
     private JsonMapper json;
 
+    private final SimpleMeterRegistry metrics = new SimpleMeterRegistry();
+
     @Test
     void secondRequestIsServedFromTheCache() {
         CountingLoader database = new CountingLoader(Duration.ZERO);
-        EventPageCache cache = new EventPageCache(redis, json, database, FAST);
+        EventPageCache cache = new EventPageCache(redis, json, database, FAST, metrics);
         UUID eventId = UUID.randomUUID();
 
         EventPage first = cache.get(eventId).orElseThrow();
@@ -55,7 +58,7 @@ class EventPageCacheTest {
     @Test
     void expiredPageIsLoadedAgain() throws Exception {
         CountingLoader database = new CountingLoader(Duration.ZERO);
-        EventPageCache cache = new EventPageCache(redis, json, database, FAST);
+        EventPageCache cache = new EventPageCache(redis, json, database, FAST, metrics);
         UUID eventId = UUID.randomUUID();
 
         cache.get(eventId);
@@ -69,7 +72,7 @@ class EventPageCacheTest {
     void crowdHittingAColdPageCausesOneDatabaseLoad() throws Exception {
         // A slow database widens the window in which a stampede could happen.
         CountingLoader database = new CountingLoader(Duration.ofMillis(300));
-        EventPageCache cache = new EventPageCache(redis, json, database, FAST);
+        EventPageCache cache = new EventPageCache(redis, json, database, FAST, metrics);
         UUID eventId = UUID.randomUUID();
 
         List<Future<Optional<EventPage>>> visitors = new ArrayList<>();
@@ -83,12 +86,14 @@ class EventPageCacheTest {
             assertThat(visitor.get()).isPresent();
         }
         assertThat(database.loads()).isEqualTo(1);
+        assertThat(lookups("rebuilt")).isEqualTo(1);
+        assertThat(lookups("hit") + lookups("waited_for_rebuild")).isEqualTo(299);
     }
 
     @Test
     void unknownEventIsAlsoCachedSoBadLinksCannotHammerTheDatabase() {
         CountingLoader database = new CountingLoader(Duration.ZERO, false);
-        EventPageCache cache = new EventPageCache(redis, json, database, FAST);
+        EventPageCache cache = new EventPageCache(redis, json, database, FAST, metrics);
         UUID unknown = UUID.randomUUID();
 
         for (int i = 0; i < 5; i++) {
@@ -105,12 +110,17 @@ class EventPageCacheTest {
         deadRedis.afterPropertiesSet();
         try {
             CountingLoader database = new CountingLoader(Duration.ZERO);
-            EventPageCache cache = new EventPageCache(new StringRedisTemplate(deadRedis), json, database, FAST);
+            EventPageCache cache = new EventPageCache(new StringRedisTemplate(deadRedis), json, database, FAST, metrics);
 
             assertThat(cache.get(UUID.randomUUID())).isPresent();
+            assertThat(lookups("database_fallback")).isEqualTo(1);
         } finally {
             deadRedis.destroy();
         }
+    }
+
+    private double lookups(String result) {
+        return metrics.counter("flashseat.event_page.lookups", "result", result).count();
     }
 
     /** Pretends to be the database and counts how often it is asked. */
