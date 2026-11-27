@@ -2,6 +2,9 @@ package com.flashseat.inventory.config;
 
 import com.flashseat.inventory.admission.AdmissionProperties;
 import com.flashseat.inventory.admission.AdmissionTokenService;
+import com.flashseat.inventory.catalog.EventCatalog;
+import com.flashseat.inventory.catalog.EventPageCache;
+import com.flashseat.inventory.catalog.EventPageProperties;
 import com.flashseat.inventory.ratelimit.InMemoryRateLimiter;
 import com.flashseat.inventory.ratelimit.RateLimitProperties;
 import com.flashseat.inventory.ratelimit.RateLimiter;
@@ -11,6 +14,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.time.InstantSource;
@@ -27,6 +31,12 @@ public class InventoryBeans {
     AdmissionTokenService admissionTokenService(AdmissionProperties properties, InstantSource clock) {
         byte[] secret = properties.secret().getBytes(StandardCharsets.UTF_8);
         return new AdmissionTokenService(secret, properties.validity(), clock);
+    }
+
+    @Bean
+    EventPageCache eventPageCache(StringRedisTemplate redis, JsonMapper json, EventCatalog catalog,
+                                  EventPageProperties properties) {
+        return new EventPageCache(redis, json, catalog::loadEventPage, properties);
     }
 
     @Bean

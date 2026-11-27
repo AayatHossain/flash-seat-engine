@@ -36,6 +36,11 @@ flashseat:
   waiting-room:
     admit-per-second: 100
     queue-retention: 2d
+  event-page:
+    # A seat map up to 2 s old is fine: holding a seat is always checked by Postgres.
+    ttl: 2s
+    lock-timeout: 3s
+    wait-for-rebuild: 1s
 
 management:
   endpoint:
