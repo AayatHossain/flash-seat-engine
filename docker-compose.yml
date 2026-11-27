@@ -67,6 +67,75 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  # ---- The application itself. Start it with:  docker compose --profile apps up -d --build ----
+  # Each service runs as 2 replicas behind NGINX. Only NGINX is reachable from the host (port 8080).
+
+  inventory:
+    profiles: [apps]
+    build:
+      context: .
+      args: { SERVICE: inventory, PORT: 8081 }
+    image: flash-seat/inventory:local
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/inventory
+      REDIS_HOST: redis
+    deploy:
+      replicas: 2
+      resources:
+        limits: { memory: 512M }
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  order:
+    profiles: [apps]
+    build:
+      context: .
+      args: { SERVICE: order, PORT: 8082 }
+    image: flash-seat/order:local
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/orders
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      # Through NGINX's internal entrance, so calls to inventory are load balanced too.
+      INVENTORY_URL: http://nginx:8090
+    deploy:
+      replicas: 2
+      resources:
+        limits: { memory: 512M }
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  worker:
+    profiles: [apps]
+    build:
+      context: .
+      args: { SERVICE: worker, PORT: 8083 }
+    image: flash-seat/worker:local
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/tickets
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MAIL_HOST: mailpit
+    deploy:
+      replicas: 2
+      resources:
+        limits: { memory: 512M }
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      mailpit: { condition: service_started }
+
+  nginx:
+    profiles: [apps]
+    image: nginx:1.30.8-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      inventory: { condition: service_healthy }
+      order: { condition: service_healthy }
+
 volumes:
   postgres-data:
   redis-data:

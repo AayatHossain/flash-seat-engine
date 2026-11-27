@@ -1,0 +1,14 @@
+# Keep the build context small and never send local secrets or notes into an image.
+.git
+.github
+**/target
+.idea
+.vscode
+*.iml
+.env
+.env.*
+notes
+CLAUDE.md
+docs
+docker
+*.md
