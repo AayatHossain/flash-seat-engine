@@ -5,6 +5,8 @@ import com.flashseat.worker.TestcontainersConfiguration.MailpitContainer;
 import com.flashseat.worker.ticket.TicketProperties;
 import com.flashseat.worker.ticket.TicketSigner;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
+import io.opentelemetry.sdk.trace.data.SpanData;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -12,7 +14,10 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.micrometer.tracing.test.autoconfigure.AutoConfigureTracing;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -33,9 +38,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 /** The worker end to end: real Kafka in, real Postgres for tickets, real SMTP (Mailpit) out. */
-@SpringBootTest
-@Import(TestcontainersConfiguration.class)
+@SpringBootTest(properties = {
+        "management.tracing.export.otlp.enabled=false",
+        "management.opentelemetry.tracing.export.schedule-delay=100ms"})
+@AutoConfigureTracing
+@Import({TestcontainersConfiguration.class, TicketWorkerTest.CapturedSpans.class})
 class TicketWorkerTest {
+
+    /** Keeps finished spans in memory instead of sending them to a collector. */
+    @TestConfiguration(proxyBeanMethods = false)
+    static class CapturedSpans {
+        @Bean
+        InMemorySpanExporter inMemorySpanExporter() {
+            return InMemorySpanExporter.create();
+        }
+    }
 
     @Autowired
     private KafkaTemplate<String, String> kafka;
@@ -61,6 +78,9 @@ class TicketWorkerTest {
     @Autowired
     private MeterRegistry metrics;
 
+    @Autowired
+    private InMemorySpanExporter spans;
+
     @Test
     void paidOrderGetsOneSignedTicketPerSeatAndAnEmail() {
         PaidOrder order = new PaidOrder();
@@ -80,6 +100,25 @@ class TicketWorkerTest {
         JsonNode email = emailsTo(order).getFirst();
         assertThat(email.path("Subject").asString()).contains(order.orderId().toString());
         assertThat(email.path("Attachments").asInt()).isEqualTo(2);
+    }
+
+    @Test
+    void ticketWorkContinuesTheTraceThatCameWithTheEvent() {
+        PaidOrder order = new PaidOrder();
+        String traceId = UUID.randomUUID().toString().replace("-", "");
+        String parentSpanId = traceId.substring(0, 16);
+        String traceparent = "00-" + traceId + "-" + parentSpanId + "-01";
+
+        publish(order.key(), "OrderPaid", "evt-" + UUID.randomUUID(), order.json("A-1"), traceparent);
+
+        await().atMost(Duration.ofSeconds(30)).until(() -> spansOfTrace(traceId).stream()
+                .anyMatch(span -> parentSpanId.equals(span.getParentSpanId())));
+        SpanData processing = spansOfTrace(traceId).stream()
+                .filter(span -> parentSpanId.equals(span.getParentSpanId()))
+                .findFirst().orElseThrow();
+        assertThat(processing.getName()).isEqualTo(properties.topic() + " process");
+        // The ticket inserts show up inside the same trace, under the processing span.
+        assertThat(spansOfTrace(traceId)).anyMatch(span -> span.getName().equals("query"));
     }
 
     @Test
@@ -156,10 +195,21 @@ class TicketWorkerTest {
     }
 
     private void publish(String key, String eventType, String eventId, String payload) {
+        publish(key, eventType, eventId, payload, null);
+    }
+
+    private void publish(String key, String eventType, String eventId, String payload, String traceparent) {
         ProducerRecord<String, String> record = new ProducerRecord<>(properties.topic(), key, payload);
         record.headers().add("event-type", eventType.getBytes(StandardCharsets.UTF_8));
         record.headers().add("event-id", eventId.getBytes(StandardCharsets.UTF_8));
+        if (traceparent != null) {
+            record.headers().add("traceparent", traceparent.getBytes(StandardCharsets.UTF_8));
+        }
         kafka.send(record).join();
+    }
+
+    private List<SpanData> spansOfTrace(String traceId) {
+        return spans.getFinishedSpanItems().stream().filter(span -> span.getTraceId().equals(traceId)).toList();
     }
 
     private int ticketCount(PaidOrder order) {

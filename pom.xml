@@ -25,5 +25,16 @@
 
     <properties>
         <java.version>25</java.version>
+        <datasource-micrometer.version>2.3.1</datasource-micrometer.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>net.ttddyy.observation</groupId>
+                <artifactId>datasource-micrometer-spring-boot</artifactId>
+                <version>${datasource-micrometer.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 </project>

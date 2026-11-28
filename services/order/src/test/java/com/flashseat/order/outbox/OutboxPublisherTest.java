@@ -7,8 +7,11 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import io.micrometer.tracing.Span;
+import io.micrometer.tracing.Tracer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.micrometer.tracing.test.autoconfigure.AutoConfigureTracing;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -37,7 +40,8 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@SpringBootTest
+@SpringBootTest(properties = "management.tracing.export.otlp.enabled=false")
+@AutoConfigureTracing
 @Import(TestcontainersConfiguration.class)
 class OutboxPublisherTest {
 
@@ -56,6 +60,12 @@ class OutboxPublisherTest {
     @Autowired
     private KafkaContainer kafka;
 
+    @Autowired
+    private OutboxWriter outbox;
+
+    @Autowired
+    private Tracer tracer;
+
     @Test
     void publishedEventCarriesKeyHeadersAndPayload() {
         String orderId = "order-" + UUID.randomUUID();
@@ -69,6 +79,25 @@ class OutboxPublisherTest {
         assertThat(header(record, OutboxPublisher.EVENT_TYPE_HEADER)).isEqualTo("OrderCreated");
         assertThat(record.value()).contains("\"amountCents\": 5000");
         assertThat(isPublished(eventId)).isTrue();
+    }
+
+    @Test
+    void eventCarriesTheTraceOfTheRequestThatCausedIt() {
+        String orderId = "order-" + UUID.randomUUID();
+        Span request = tracer.nextSpan().name("webhook request").start();
+        try (Tracer.SpanInScope scope = tracer.withSpan(request)) {
+            new TransactionTemplate(transactionManager).executeWithoutResult(
+                    tx -> outbox.append("order", orderId, "OrderPaid", Map.of()));
+        } finally {
+            request.end();
+        }
+
+        // Published later by a background job with no trace of its own.
+        publisher.publishPending();
+
+        ConsumerRecord<String, String> record = readEventsOf(Set.of(orderId), 1).getFirst();
+        assertThat(header(record, OutboxPublisher.TRACEPARENT_HEADER))
+                .startsWith("00-" + request.context().traceId() + "-" + request.context().spanId() + "-");
     }
 
     @Test

@@ -79,6 +79,7 @@ services:
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/inventory
       REDIS_HOST: redis
+      OTLP_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
     deploy:
       replicas: 2
       resources:
@@ -98,6 +99,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       # Through NGINX's internal entrance, so calls to inventory are load balanced too.
       INVENTORY_URL: http://nginx:8090
+      OTLP_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
     deploy:
       replicas: 2
       resources:
@@ -116,6 +118,7 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/tickets
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       MAIL_HOST: mailpit
+      OTLP_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
     deploy:
       replicas: 2
       resources:
@@ -143,11 +146,20 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=7d
+      # Keeps a trace ID next to latency samples, so Grafana can jump from a slow request to its trace.
+      - --enable-feature=exemplar-storage
     ports:
       - "9090:9090"
     volumes:
       - ./docker/prometheus:/etc/prometheus:ro
       - prometheus-data:/prometheus
+
+  # Traces: open http://localhost:16686. Kept in memory, so they are gone after a restart.
+  jaeger:
+    profiles: [apps]
+    image: jaegertracing/jaeger:2.23.0
+    ports:
+      - "16686:16686"
 
   grafana:
     profiles: [apps]

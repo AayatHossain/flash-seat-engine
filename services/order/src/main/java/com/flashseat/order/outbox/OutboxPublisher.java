@@ -25,6 +25,7 @@ public class OutboxPublisher {
 
     public static final String EVENT_ID_HEADER = "event-id";
     public static final String EVENT_TYPE_HEADER = "event-type";
+    public static final String TRACEPARENT_HEADER = "traceparent";
 
     // Any fixed number works, as long as every replica uses the same one.
     private static final long PUBLISHER_LOCK_KEY = 7_340_002L;
@@ -64,7 +65,7 @@ public class OutboxPublisher {
         }
 
         List<OutboxEvent> batch = jdbc.sql("""
-                        SELECT id, aggregate_id, event_type, payload::text AS payload
+                        SELECT id, aggregate_id, event_type, payload::text AS payload, traceparent
                         FROM outbox
                         WHERE published_at IS NULL
                         ORDER BY created_at, id
@@ -76,7 +77,8 @@ public class OutboxPublisher {
                         row.getObject("id", UUID.class),
                         row.getString("aggregate_id"),
                         row.getString("event_type"),
-                        row.getString("payload")))
+                        row.getString("payload"),
+                        row.getString("traceparent")))
                 .list();
         if (batch.isEmpty()) {
             return 0;
@@ -99,6 +101,10 @@ public class OutboxPublisher {
         ProducerRecord<String, String> record = new ProducerRecord<>(properties.topic(), event.aggregateId(), event.payload());
         record.headers().add(EVENT_ID_HEADER, event.id().toString().getBytes(StandardCharsets.UTF_8));
         record.headers().add(EVENT_TYPE_HEADER, event.eventType().getBytes(StandardCharsets.UTF_8));
+        if (event.traceparent() != null) {
+            // Consumers continue the trace of the request that caused the event, not of this background job.
+            record.headers().add(TRACEPARENT_HEADER, event.traceparent().getBytes(StandardCharsets.UTF_8));
+        }
         try {
             return kafka.send(record);
         } catch (RuntimeException e) {
@@ -117,6 +123,6 @@ public class OutboxPublisher {
         }
     }
 
-    private record OutboxEvent(UUID id, String aggregateId, String eventType, String payload) {
+    private record OutboxEvent(UUID id, String aggregateId, String eventType, String payload, String traceparent) {
     }
 }

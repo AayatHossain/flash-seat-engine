@@ -66,3 +66,12 @@ management:
         http.server.requests: 1ms
       maximum-expected-value:
         http.server.requests: 10s
+  tracing:
+    sampling:
+      # Every request is traced locally. Under real traffic a fraction (for example 0.1) is enough.
+      probability: ${TRACING_SAMPLE_RATE:1.0}
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
