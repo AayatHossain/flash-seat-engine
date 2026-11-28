@@ -78,3 +78,9 @@ groups:
         labels: { severity: ticket }
         annotations:
           summary: The ticket worker parked events on order.events.DLT; they need a look
+      - alert: ReplicaLagging
+        expr: max(flashseat_replica_lag_seconds) > 5
+        for: 1m
+        labels: { severity: ticket }
+        annotations:
+          summary: The read replica is over 5 s behind; event pages show older seat maps than usual

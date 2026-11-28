@@ -922,8 +922,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (application) (hikaricp_connections_active)",
-          "legendFormat": "{{application}} active"
+          "expr": "sum by (application, pool) (hikaricp_connections_active)",
+          "legendFormat": "{{application}} {{pool}} active"
         },
         {
           "refId": "B",
@@ -931,10 +931,11 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (application) (hikaricp_connections_pending)",
-          "legendFormat": "{{application}} waiting"
+          "expr": "sum by (application, pool) (hikaricp_connections_pending)",
+          "legendFormat": "{{application}} {{pool}} waiting"
         }
-      ]
+      ],
+      "description": "Connections the apps hold to PgBouncer. PgBouncer shares a few real Postgres connections among them."
     },
     {
       "id": 22,
@@ -1025,6 +1026,129 @@
           },
           "expr": "process_cpu_usage",
           "legendFormat": "{{job}} {{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "type": "row",
+      "title": "Read replica",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 53
+      },
+      "panels": []
+    },
+    {
+      "id": 25,
+      "type": "timeseries",
+      "title": "Replica lag",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 54
+      },
+      "description": "How far the read replica is behind the primary. Event pages read from it.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(flashseat_replica_lag_seconds)",
+          "legendFormat": "lag"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "type": "timeseries",
+      "title": "Reads per pool (inventory)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 54
+      },
+      "description": "Connections borrowed per second from each pool: event pages use the replica, everything else the primary.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (pool) (rate(hikaricp_connections_usage_seconds_count{application=\"inventory\"}[1m]))",
+          "legendFormat": "{{pool}}"
         }
       ]
     }

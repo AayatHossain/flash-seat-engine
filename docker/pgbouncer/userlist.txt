@@ -1,0 +1,3 @@
+"inventory" "inventory"
+"orders" "orders"
+"tickets" "tickets"

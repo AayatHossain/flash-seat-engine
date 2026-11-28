@@ -8,6 +8,8 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/inventory}
     username: ${DB_USER:inventory}
     password: ${DB_PASSWORD:inventory}
+    hikari:
+      pool-name: primary
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -36,6 +38,11 @@ flashseat:
   waiting-room:
     admit-per-second: 100
     queue-retention: 2d
+  read-replica:
+    # The url is set only where a replica exists (env FLASHSEAT_READ_REPLICA_URL); without it event pages use the primary.
+    username: ${DB_USER:inventory}
+    password: ${DB_PASSWORD:inventory}
+    pool-size: 5
   event-page:
     # A seat map up to 2 s old is fine: holding a seat is always checked by Postgres.
     ttl: 2s

@@ -9,14 +9,50 @@ services:
       POSTGRES_PASSWORD: postgres
     ports:
       - "5432:5432"
+    # Our own access rules (they allow the replica to stream changes), and enough change log kept
+    # for a replica that was briefly stopped to catch up instead of being cloned again.
+    command: ["postgres", "-c", "hba_file=/etc/postgresql/pg_hba.conf", "-c", "wal_keep_size=512MB"]
     volumes:
       - postgres-data:/var/lib/postgresql
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./docker/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # A read-only copy of the primary, streaming every change. Event pages are read from here.
+  postgres-replica:
+    image: postgres:18.7-alpine
+    entrypoint: ["sh", "/replica-entrypoint.sh"]
+    environment:
+      PGPASSWORD: replicator
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-replica-data:/var/lib/postgresql
+      - ./docker/postgres/replica-entrypoint.sh:/replica-entrypoint.sh:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Connection pooler in front of both databases. The apps connect here, never to Postgres directly
+  # (except for schema migrations, which need a session-level lock and so bypass the pooler).
+  pgbouncer:
+    image: pgbouncer/pgbouncer:1.25.2
+    entrypoint: ["/opt/pgbouncer/pgbouncer", "/etc/pgbouncer/pgbouncer.ini"]
+    ports:
+      - "6432:6432"
+    volumes:
+      - ./docker/pgbouncer:/etc/pgbouncer:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+      postgres-replica: { condition: service_healthy }
 
   redis:
     image: redis:8.12.0-alpine
@@ -77,7 +113,12 @@ services:
       args: { SERVICE: inventory, PORT: 8081 }
     image: flash-seat/inventory:local
     environment:
-      DB_URL: jdbc:postgresql://postgres:5432/inventory
+      DB_URL: jdbc:postgresql://pgbouncer:6432/inventory
+      FLASHSEAT_READ_REPLICA_URL: jdbc:postgresql://pgbouncer:6432/inventory_replica
+      # Migrations take a session-level lock, so they connect to Postgres directly, not through PgBouncer.
+      SPRING_FLYWAY_URL: jdbc:postgresql://postgres:5432/inventory
+      SPRING_FLYWAY_USER: inventory
+      SPRING_FLYWAY_PASSWORD: inventory
       REDIS_HOST: redis
       OTLP_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
     deploy:
@@ -85,7 +126,7 @@ services:
       resources:
         limits: { memory: 512M }
     depends_on:
-      postgres: { condition: service_healthy }
+      pgbouncer: { condition: service_started }
       redis: { condition: service_healthy }
 
   order:
@@ -95,7 +136,11 @@ services:
       args: { SERVICE: order, PORT: 8082 }
     image: flash-seat/order:local
     environment:
-      DB_URL: jdbc:postgresql://postgres:5432/orders
+      DB_URL: jdbc:postgresql://pgbouncer:6432/orders
+      # Migrations take a session-level lock, so they connect to Postgres directly, not through PgBouncer.
+      SPRING_FLYWAY_URL: jdbc:postgresql://postgres:5432/orders
+      SPRING_FLYWAY_USER: orders
+      SPRING_FLYWAY_PASSWORD: orders
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       # Through NGINX's internal entrance, so calls to inventory are load balanced too.
       INVENTORY_URL: http://nginx:8090
@@ -105,7 +150,7 @@ services:
       resources:
         limits: { memory: 512M }
     depends_on:
-      postgres: { condition: service_healthy }
+      pgbouncer: { condition: service_started }
       kafka: { condition: service_healthy }
 
   worker:
@@ -115,7 +160,11 @@ services:
       args: { SERVICE: worker, PORT: 8083 }
     image: flash-seat/worker:local
     environment:
-      DB_URL: jdbc:postgresql://postgres:5432/tickets
+      DB_URL: jdbc:postgresql://pgbouncer:6432/tickets
+      # Migrations take a session-level lock, so they connect to Postgres directly, not through PgBouncer.
+      SPRING_FLYWAY_URL: jdbc:postgresql://postgres:5432/tickets
+      SPRING_FLYWAY_USER: tickets
+      SPRING_FLYWAY_PASSWORD: tickets
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       MAIL_HOST: mailpit
       OTLP_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
@@ -124,7 +173,7 @@ services:
       resources:
         limits: { memory: 512M }
     depends_on:
-      postgres: { condition: service_healthy }
+      pgbouncer: { condition: service_started }
       kafka: { condition: service_healthy }
       mailpit: { condition: service_started }
 
@@ -179,6 +228,7 @@ services:
 
 volumes:
   postgres-data:
+  postgres-replica-data:
   redis-data:
   kafka-data:
   prometheus-data:
